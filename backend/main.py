@@ -62,7 +62,7 @@ async def generate_code(request: PromptRequest):
     response = await get_code_response(user_prompt)
     return {"code": response}
 
-# Endpoint to Get Chat History for continued chat
+# Endpoint to Get Chat History by chat_id with their messages
 @app.get("/chat-history/{chat_id}")
 def get_chat_history(chat_id: str, db: Session = Depends(get_db)):
     chat_session = db.query(db_models.ChatSession).filter(db_models.ChatSession.chat_id == chat_id).first()
@@ -80,3 +80,26 @@ def get_chat_history(chat_id: str, db: Session = Depends(get_db)):
         })
 
     return {"chat_id": chat_id, "history": chat_history}
+
+
+# Get all chat sessions with their messages
+@app.get("/all-chat-history")
+def get_all_chat_history(db: Session = Depends(get_db)):
+    sessions = db.query(db_models.ChatSession).all()
+    all_chats = []
+
+    for session in sessions:
+        messages = db.query(db_models.ChatMessage).filter(db_models.ChatMessage.chat_id == session.chat_id).all()
+        chat_history = []
+        for message in messages:
+            chat_history.append({
+                "role": message.role,
+                "content": message.content,
+                "timestamp": message.timestamp
+            })
+        all_chats.append({
+            "chat_id": session.chat_id,
+            "messages": chat_history
+        })
+
+    return {"all_chats": all_chats}
