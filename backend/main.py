@@ -95,7 +95,7 @@ def get_all_chat_history(db: Session = Depends(get_db)):
             chat_histories.append({
                 "chat_id": chat.chat_id,
                 "created_at": chat.created_at,
-                "messages": [{"role": m.role, "content": m.content, "timestamp": m.timestamp} for m in messages]
+                "messages": [{"role": m.role, "content": m.content} for m in messages]
             })
 
         return {"chats": chat_histories}
