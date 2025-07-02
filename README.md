@@ -1,6 +1,6 @@
 # 🤖 Emzyking AI – Code-Only Chatbot API
 
-Emzyking AI is a **Large Language Model (LLM)-powered backend service** purpose-built for **code generation**. It handles chat session management, multi-turn conversations, and standalone code generation while ignoring non-coding prompts. Built with FastAPI, PostgreSQL, and deployed on Railway.
+Emzyking AI is a **Large Language Model (LLM)-powered backend service** purpose-built for **code generation and programming**. It handles chat session management, multi-turn conversations, and standalone code generation while ignoring non-coding prompts. Built with FastAPI, PostgreSQL, and deployed on Railway.
 
 ## 🌐 Live URLs
 
