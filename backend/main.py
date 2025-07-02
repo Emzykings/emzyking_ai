@@ -62,7 +62,7 @@ async def generate_code(request: PromptRequest):
     response = await get_code_response(user_prompt)
     return {"code": response}
 
-# Endpoint to Get Chat History
+# Endpoint to Get Chat History for continued chat
 @app.get("/chat-history/{chat_id}")
 def get_chat_history(chat_id: str, db: Session = Depends(get_db)):
     chat_session = db.query(db_models.ChatSession).filter(db_models.ChatSession.chat_id == chat_id).first()
