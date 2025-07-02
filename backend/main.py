@@ -61,3 +61,22 @@ async def generate_code(request: PromptRequest):
 
     response = await get_code_response(user_prompt)
     return {"code": response}
+
+# Endpoint to Get Chat History
+@app.get("/chat-history/{chat_id}")
+def get_chat_history(chat_id: str, db: Session = Depends(get_db)):
+    chat_session = db.query(db_models.ChatSession).filter(db_models.ChatSession.chat_id == chat_id).first()
+
+    if not chat_session:
+        return {"error": "Chat session not found."}
+
+    messages = db.query(db_models.ChatMessage).filter(db_models.ChatMessage.chat_id == chat_id).order_by(db_models.ChatMessage.id).all()
+
+    chat_history = []
+    for message in messages:
+        chat_history.append({
+            "role": message.role,
+            "content": message.content
+        })
+
+    return {"chat_id": chat_id, "history": chat_history}
