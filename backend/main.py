@@ -85,21 +85,20 @@ def get_chat_history(chat_id: str, db: Session = Depends(get_db)):
 # Get all chat sessions with their messages
 @app.get("/all-chat-history")
 def get_all_chat_history(db: Session = Depends(get_db)):
-    sessions = db.query(db_models.ChatSession).all()
-    all_chats = []
+    try:
+        all_chats = db.query(db_models.ChatSession).all()
 
-    for session in sessions:
-        messages = db.query(db_models.ChatMessage).filter(db_models.ChatMessage.chat_id == session.chat_id).all()
-        chat_history = []
-        for message in messages:
-            chat_history.append({
-                "role": message.role,
-                "content": message.content,
-                "timestamp": message.timestamp
+        chat_histories = []
+        for chat in all_chats:
+            messages = db.query(db_models.ChatMessage).filter(db_models.ChatMessage.chat_id == chat.chat_id).all()
+
+            chat_histories.append({
+                "chat_id": chat.chat_id,
+                "created_at": chat.created_at,
+                "messages": [{"role": m.role, "content": m.content, "timestamp": m.timestamp} for m in messages]
             })
-        all_chats.append({
-            "chat_id": session.chat_id,
-            "messages": chat_history
-        })
 
-    return {"all_chats": all_chats}
+        return {"chats": chat_histories}
+
+    except Exception as e:
+        return {"error": str(e)}
