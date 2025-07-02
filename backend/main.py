@@ -82,19 +82,25 @@ def get_chat_history(chat_id: str, db: Session = Depends(get_db)):
     return {"chat_id": chat_id, "history": chat_history}
 
 
-# Get all chat sessions with their messages
+# Get all chat sessions with their messages and chat summary
 @app.get("/all-chat-history")
 def get_all_chat_history(db: Session = Depends(get_db)):
     try:
-        all_chats = db.query(db_models.ChatSession).all()
+        all_chats = db.query(db_models.ChatSession).order_by(db_models.ChatSession.created_at.desc()).all()
 
         chat_histories = []
         for chat in all_chats:
             messages = db.query(db_models.ChatMessage).filter(db_models.ChatMessage.chat_id == chat.chat_id).all()
 
+            user_messages = [m.content for m in messages if m.role == 'user']
+
+            # Generate keyword summary
+            summary = extract_keywords(user_messages)
+
             chat_histories.append({
                 "chat_id": chat.chat_id,
                 "created_at": chat.created_at,
+                "summary": summary,
                 "messages": [{"role": m.role, "content": m.content} for m in messages]
             })
 
