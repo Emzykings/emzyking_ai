@@ -5,6 +5,7 @@ from backend.database.db_connection import get_db
 from backend.database import db_models
 from backend.schemas import PromptRequest, ContinueChatRequest
 from sqlalchemy.orm import Session
+from backend.utils import extract_keywords
 import uuid
 
 app = FastAPI()
