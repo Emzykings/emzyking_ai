@@ -187,7 +187,7 @@ def submit_feedback(request: FeedbackRequest, db: Session = Depends(get_db)):
     Includes rating, optional comments, and message reference.
     """
     try:
-        store_agent_feedback(db, request)
+        save_feedback_from_request(db, request)
         return {"message": "Feedback received successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
