@@ -42,14 +42,15 @@ class RouterAgent(BaseAgent):
         """
         Enables the RouterAgent to behave like other agents, primarily for consistency.
         """
-        return await self.route(user_input=user_input, context=context)
+        response, thought, tools, agent, score = await self.route(user_input=user_input, context=context)
+        return response, thought, tools
 
     async def route(
         self,
         user_input: str,
         chat_id: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None
-    ) -> Tuple[str, Optional[Dict[str, str]], List[Dict[str, Any]]]:
+    ) -> Tuple[str, Optional[Dict[str, str]], List[Dict[str, Any]], str, float]:
         """
         Main routing function. Scores and selects the best agent.
         """
@@ -62,7 +63,7 @@ class RouterAgent(BaseAgent):
         if ranked:
             best_agent, score = ranked[0]
             response, thought, tool_calls = await best_agent.handle(user_input, context)
-            return response, thought, tool_calls
+            return response, thought, tool_calls, best_agent.__class__.__name__, float(score)
 
         # Step 3: Fallback response
         fallback_msg = (
@@ -73,4 +74,4 @@ class RouterAgent(BaseAgent):
             "• 'Explain what this SQL query does'\n"
             "• 'Remember that I prefer Python over Java'"
         )
-        return fallback_msg, None, []
+        return fallback_msg, None, [], "router", 0.0
