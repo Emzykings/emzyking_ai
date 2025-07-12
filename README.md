@@ -1,6 +1,6 @@
 # 🤖 Emzyking AI – Code-Only Chatbot API
 
-Emzyking AI is a **Large Language Model (LLM)-powered backend service** purpose-built for **code generation and programming**. It handles chat session management, multi-turn conversations, and standalone code generation while ignoring non-coding prompts. Built with FastAPI, PostgreSQL, and deployed on Railway.
+Emzyking AI is a **Large Language Model (LLM)-powered backend service** purpose-built for **code generation and programming**. It handles chat session management, multi-turn conversations, agent routing, prompt scoring, and feedback collection. Built with FastAPI, PostgreSQL, and deployed on Railway.
 
 ## 🌐 Live URLs
 
@@ -12,11 +12,14 @@ Emzyking AI is a **Large Language Model (LLM)-powered backend service** purpose-
 ## ⚙️ Features
 
 - ✅ LLM-Powered Code-Only Responses
+- ✅ Dynamic Agent Routing Based on Prompt
+- ✅ ML-Based Prompt Scoring and Intent Matching
 - ✅ New Chat Session Creation
 - ✅ Multi-Turn Chat Support
 - ✅ One-Off Code Generation
 - ✅ Retrieve Chat History by Chat ID
 - ✅ Retrieve All Chat Sessions
+- ✅ User Feedback Collection on Responses
 - ✅ PostgreSQL Integration via SQLAlchemy
 - ✅ CORS Enabled for Frontend Integration
 - ✅ Scalable Deployment on Railway
@@ -31,8 +34,18 @@ Emzyking AI is a **Large Language Model (LLM)-powered backend service** purpose-
 | `POST` | `/new-chat` | Start a new chat session |
 | `POST` | `/continue-chat` | Continue an existing chat session |
 | `POST` | `/generate-code` | One-off code generation |
+| `POST` | `/feedback` | Submit feedback on an assistant's message |
 | `GET` | `/chat-history/{chat_id}` | Retrieve chat history for a specific session |
 | `GET` | `/all-chat-history` | Retrieve all chat sessions |
+
+---
+
+## 🧠 Routing and Scoring Flow
+
+- Every user prompt is routed by the `RouterAgent`, which evaluates all specialized agents using an **ML scoring function** from `ranking_model.py`.
+- `score_prompt()` uses a lightweight classifier to assign confidence scores to each agent based on prompt fit.
+- The best-matching agent is selected and its `handle()` function is invoked.
+- Feedback on the response can later be submitted via `/feedback` to influence retraining.
 
 ---
 
@@ -43,7 +56,7 @@ Emzyking AI is a **Large Language Model (LLM)-powered backend service** purpose-
 - **Database**: PostgreSQL (via SQLAlchemy)
 - **Deployment**: Railway (Nixpacks)
 - **LLM Provider**: Google Gemini (OpenAI as fallback)
-- **Others**: Uvicorn, Pydantic, psycopg2
+- **Others**: Uvicorn, Pydantic, psycopg2, Alembic, Scikit-learn
 
 ---
 
@@ -54,7 +67,7 @@ Emzyking AI is a **Large Language Model (LLM)-powered backend service** purpose-
 ```bash
 git clone https://github.com/Emzykings/emzyking_ai.git
 cd emzyking_ai
-````
+```
 
 ### 2. Create and Activate Virtual Environment
 
@@ -110,14 +123,33 @@ emzyking_ai/
 ├── backend/
 │   ├── main.py               # API endpoints and routing
 │   ├── llm_handler.py        # LLM integration and code filtering
+│   ├── router_agent.py       # Selects best agent using scoring
+│   ├── scorer.py             # Ranks agents using prompt scoring
+│   ├── ranking_model.py      # ML model for agent relevance scoring
+│   ├── feedback_handler.py   # Collects user feedback on agent responses
 │   ├── schemas.py            # Pydantic request models
+│   ├── agent_registry.py     # Registry for all available agents
+│   ├── utils.py              # Shared utilities (e.g., response formatters)
+│   ├── context/
+│   │   └── context_builder.py   # Builds contextual memory per chat
+│   ├── agents/
+│   │   ├── base_agent.py     # Base class for all specialized agents
+│   │   ├── code_generator.py
+│   │   ├── code_explainer.py
+│   │   ├── bug_fixer.py
+│   │   ├── memory_agent.py
+│   │   └── router_agent.py
 │   └── database/
 │       ├── db_connection.py  # Database session management
 │       ├── db_models.py      # SQLAlchemy ORM models
-│       └── create_tables.py  # DB table creation script
+│       ├── create_tables.py  # DB table creation script
+│       └── __init__.py
 ├── requirements.txt
 ├── README.md
-└── .gitignore
+├── .env
+├── .gitignore
+├── alembic.ini
+└── migrations/
 ```
 
 ---
@@ -140,6 +172,7 @@ base_url = https://emzykingai-production.up.railway.app
 | New Chat           | POST   | `{{base_url}}/new-chat`                 | None                            |
 | Continue Chat      | POST   | `{{base_url}}/continue-chat`            | `{"chat_id": "", "prompt": ""}` |
 | Generate Code      | POST   | `{{base_url}}/generate-code`            | `{"prompt": ""}`                |
+| Submit Feedback    | POST   | `{{base_url}}/feedback`                 | `{"message_id": 1, "is_approved": true, "user_comment": "Great answer!"}` |
 | Chat History by ID | GET    | `{{base_url}}/chat-history/{{chat_id}}` | None                            |
 | All Chat History   | GET    | `{{base_url}}/all-chat-history`         | None                            |
 
@@ -180,6 +213,15 @@ export const getAllChats = async () => {
   const res = await axios.get(`${API_BASE}/all-chat-history`);
   return res.data.all_chats;
 };
+
+export const submitFeedback = async (messageId, isApproved, comment) => {
+  const res = await axios.post(`${API_BASE}/feedback`, {
+    message_id: messageId,
+    is_approved: isApproved,
+    user_comment: comment,
+  });
+  return res.data;
+};
 ```
 
 ### Python (Requests)
@@ -208,6 +250,14 @@ def get_chat_history(chat_id):
 def get_all_chats():
     res = requests.get(f"{API_BASE}/all-chat-history")
     return res.json()['all_chats']
+
+def submit_feedback(message_id, is_approved, comment):
+    res = requests.post(f"{API_BASE}/feedback", json={
+        "message_id": message_id,
+        "is_approved": is_approved,
+        "user_comment": comment
+    })
+    return res.json()
 ```
 
 ---
@@ -228,6 +278,9 @@ def get_all_chats():
 4. **One-off code generation:**
    Use `generateCode(prompt)` for instant output
 
+5. **Submit feedback:**
+   After rendering assistant response, allow user to approve/disapprove it → call `submitFeedback()`
+
 ### Notes
 
 * All requests use `application/json`
@@ -243,12 +296,11 @@ def get_all_chats():
 * 🌍 Multi-Region Deployments
 * 🐳 Docker Support
 * 🔁 WebSocket Support for Real-time Messaging
+* 🤖 Continuous Feedback-Informed Agent Retraining
 
 ---
 
 ## 👤 Author
 
-**Emzyking AI Team**
+**Emzyking AI Team**  
 *Backend Engineer: Emzyking*
-
----

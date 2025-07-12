@@ -1,24 +1,24 @@
-from collections import Counter
-import re
+import google.generativeai as genai
 
-def extract_keywords(messages, top_n=3):
+async def extract_keywords(messages: list[str]) -> str:
     """
-    Extracts the most frequent keywords from a list of user messages.
+    Generate a short AI-powered summary for a list of user messages.
     """
-    stopwords = {'the', 'is', 'at', 'which', 'on', 'a', 'an', 'in', 'to', 'for', 'and', 'with', 'of', 'you', 'your'}
-    words = []
+    if not messages:
+        return "Untitled Chat"
 
-    # Concatenate all messages and split into words
-    for message in messages:
-        words += re.findall(r'\b\w+\b', message.lower())
+    full_context = "\n".join(messages[:10])  # Use first 10 messages max
 
-    # Filter out stopwords and short words
-    filtered_words = [word for word in words if word not in stopwords and len(word) > 2]
+    prompt = (
+        "Summarize this chat in 1 concise sentence as a title, using key technical topics only.\n\n"
+        f"{full_context}\n\n"
+        "Title Summary:"
+    )
 
-    # Count word frequency
-    word_counts = Counter(filtered_words)
-
-    # Get top N keywords
-    most_common = [word for word, count in word_counts.most_common(top_n)]
-
-    return ', '.join(most_common) if most_common else 'Untitled Chat'
+    try:
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    
+    except Exception as e:
+        return "Untitled Chat"
