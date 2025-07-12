@@ -42,7 +42,7 @@ class RouterAgent(BaseAgent):
         """
         Enables the RouterAgent to behave like other agents, primarily for consistency.
         """
-        response, thought, tools, agent, score = await self.route(user_input=user_input, context=context)
+        response, thought, tools, _, _ = await self.route(user_input=user_input, context=context)
         return response, thought, tools
 
     async def route(
@@ -53,6 +53,13 @@ class RouterAgent(BaseAgent):
     ) -> Tuple[str, Optional[Dict[str, str]], List[Dict[str, Any]], str, float]:
         """
         Main routing function. Scores and selects the best agent.
+
+        Returns:
+            - response: The agent's reply to the prompt
+            - thought: Optional thought or internal reasoning
+            - tool_calls: Any tool usage or structured actions
+            - agent_name: The name of the selected agent
+            - confidence_score: Relevance score from ranking
         """
         context = context or {}
 
