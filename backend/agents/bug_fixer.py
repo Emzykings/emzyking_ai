@@ -6,7 +6,7 @@ Author: Emzyking AI
 """
 
 from backend.agents.base_agent import BaseAgent
-from typing import Any, Dict
+from typing import Any, Dict, List
 import os
 import google.generativeai as genai
 from dotenv import load_dotenv
@@ -27,18 +27,27 @@ class BugFixerAgent(BaseAgent):
             description="Detects and fixes bugs in broken or error-prone code."
         )
 
-    def can_handle(self, prompt: str) -> bool:
+    def keywords(self) -> List[str]:
         """
-        Determines whether this agent should handle the given prompt.
+        Returns a list of keywords relevant to bug fixing tasks.
+        """
+        return [
+            "fix", "bug", "error", "issue", "debug", "troubleshoot",
+            "broken", "fails", "throws", "unexpected", "wrong", "doesn't work", "not working"
+        ]
+
+    def can_handle(self, prompt: str) -> int:
+        """
+        Scores how well this agent can handle the prompt.
 
         Args:
             prompt (str): The user input.
 
         Returns:
-            bool: True if the prompt likely involves bug fixing.
+            int: Match score based on keyword matches.
         """
-        keywords = ["fix", "bug", "error", "issue", "debug", "troubleshoot", "broken"]
-        return any(keyword in prompt.lower() for keyword in keywords)
+        prompt_lower = prompt.lower()
+        return sum(1 for kw in self.keywords() if kw in prompt_lower)
 
     async def handle(self, prompt: str, context: Dict[str, Any] = {}) -> str:
         """
@@ -54,8 +63,8 @@ class BugFixerAgent(BaseAgent):
         bug_fixing_prompt = (
             "You are Emzyking AI, a powerful code debugging assistant.\n"
             "Your job is to detect and fix any errors in the user's code.\n"
-            "Only return the corrected version of the code without additional explanations.\n\n"
-            f"User Code with Issue:\n{prompt}\n\n"
+            "Return only the corrected version of the code without extra explanations.\n\n"
+            f"User Code with Issue:\n{prompt.strip()}\n\n"
             "Fixed Code:"
         )
 

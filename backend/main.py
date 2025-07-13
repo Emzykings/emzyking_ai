@@ -3,15 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 import uuid
+import traceback
 
-from backend.schemas import PromptRequest, ContinueChatRequest
+from backend.schemas import PromptRequest, ContinueChatRequest, FeedbackRequest
 from backend.database.db_connection import get_db
 from backend.database import db_models
 from backend.utils import extract_keywords
 from backend.agent_registry import router_agent
 from backend.context.context_builder import build_context
 from backend.feedback_handler import save_feedback_from_request
-from backend.schemas import FeedbackRequest
 
 # Load environment variables
 load_dotenv()
@@ -49,76 +49,78 @@ async def continue_chat(request: ContinueChatRequest, db: Session = Depends(get_
     routing it through the intelligent agent layer,
     and storing all results.
     """
-    chat_id = request.chat_id
-    user_prompt = request.prompt
+    try:
+        chat_id = request.chat_id
+        user_prompt = request.prompt
 
-    chat_session = db.query(db_models.ChatSession).filter(
-        db_models.ChatSession.chat_id == chat_id
-    ).first()
+        chat_session = db.query(db_models.ChatSession).filter(
+            db_models.ChatSession.chat_id == chat_id
+        ).first()
 
-    if not chat_session:
-        raise HTTPException(status_code=404, detail="Chat session not found.")
+        if not chat_session:
+            raise HTTPException(status_code=404, detail="Chat session not found.")
 
-    # Store user message
-    user_msg = db_models.ChatMessage(chat_id=chat_id, role="user", content=user_prompt)
-    db.add(user_msg)
-    db.commit()
-    db.refresh(user_msg)
+        # Store user message
+        user_msg = db_models.ChatMessage(chat_id=chat_id, role="user", content=user_prompt)
+        db.add(user_msg)
+        db.commit()
+        db.refresh(user_msg)
 
-    # Inject memory + recent history
-    context_str = build_context(chat_id, db)
+        # Inject memory + recent history
+        context = build_context(chat_id, db)
 
-    # Route intelligently via router
-    response_text, thought, tool_calls, agent_name, confidence = await router_agent.route(
-        chat_id=chat_id, user_input=user_prompt, context_str=context_str
-    )
-
-    # Store assistant message
-    assistant_msg = db_models.ChatMessage(
-        chat_id=chat_id, role="assistant", content=response_text
-    )
-    db.add(assistant_msg)
-    db.commit()
-    db.refresh(assistant_msg)
-
-    # Store optional agent thought
-    if thought:
-        agent_thought = db_models.AgentThought(
-            message_id=assistant_msg.id,
-            reasoning=thought.get("reasoning"),
-            tool_invoked=thought.get("tool_invoked"),
-            observation=thought.get("observation"),
+        # Route intelligently via router
+        response_text, thought, tool_calls, agent_name, confidence = await router_agent.route(
+            chat_id=chat_id, user_input=user_prompt, context=context
         )
-        db.add(agent_thought)
 
-    # Store any tool usage
-    for tool in tool_calls or []:
-        db.add(
-            db_models.ToolUsage(
+        # Store assistant message
+        assistant_msg = db_models.ChatMessage(
+            chat_id=chat_id, role="assistant", content=response_text
+        )
+        db.add(assistant_msg)
+        db.commit()
+        db.refresh(assistant_msg)
+
+        # Store optional agent thought
+        if thought:
+            agent_thought = db_models.AgentThought(
                 message_id=assistant_msg.id,
-                tool_name=tool.get("tool_name"),
-                input_params=tool.get("input"),
-                output_result=tool.get("output"),
+                reasoning=thought.get("reasoning"),
+                tool_invoked=thought.get("tool_invoked"),
+                observation=thought.get("observation"),
             )
-        )
+            db.add(agent_thought)
 
-    db.commit()
+        # Store any tool usage
+        for tool in tool_calls or []:
+            db.add(
+                db_models.ToolUsage(
+                    message_id=assistant_msg.id,
+                    tool_name=tool.get("tool_name"),
+                    input_params=tool.get("input"),
+                    output_result=tool.get("output"),
+                )
+            )
 
-    return {
-        "chat_id": chat_id,
-        "response": response_text,
-        "agent_thought": thought,
-        "tools_used": tool_calls,
-        "routed_agent": agent_name,
-        "confidence_score": confidence
-    }
+        db.commit()
+
+        return {
+            "chat_id": chat_id,
+            "response": response_text,
+            "agent_thought": thought,
+            "tools_used": tool_calls,
+            "routed_agent": agent_name,
+            "confidence_score": confidence
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
 
 @app.post("/generate-code")
 async def generate_code(request: PromptRequest):
-    """
-    Shortcut endpoint to directly generate code without a chat session.
-    Internally uses the same routing mechanism.
-    """
+    """Shortcut endpoint to directly generate code without a chat session."""
     result, _, _, _, _ = await router_agent.route(
         chat_id=str(uuid.uuid4()), user_input=request.prompt
     )
@@ -177,6 +179,7 @@ def get_all_chat_history(db: Session = Depends(get_db)):
             )
 
         return {"chats": chat_histories}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

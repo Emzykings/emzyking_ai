@@ -9,6 +9,7 @@ Author: Emzyking AI
 from typing import List, Dict, Any, Optional, Tuple
 from backend.agents.base_agent import BaseAgent
 from backend.scorer import rank_agents
+from backend import llm_handler
 
 
 class RouterAgent(BaseAgent):
@@ -18,7 +19,7 @@ class RouterAgent(BaseAgent):
     """
 
     def __init__(self):
-        # Lazy import to avoid circular import at top-level
+        # import to avoid circular import at top-level
         from backend.agent_registry import get_all_agents
         self.agents: List[BaseAgent] = [
             agent for agent in get_all_agents()
@@ -29,9 +30,7 @@ class RouterAgent(BaseAgent):
         return ["route", "dispatch", "redirect"]
 
     def can_handle(self, user_input: str) -> int:
-        """
-        Always return 0 — RouterAgent is not designed to directly handle prompts.
-        """
+        # RouterAgent doesn't directly handle prompts
         return 0
 
     async def handle(
@@ -39,9 +38,6 @@ class RouterAgent(BaseAgent):
         user_input: str,
         context: Optional[Dict[str, Any]] = None
     ) -> Tuple[str, Optional[Dict[str, str]], List[Dict[str, Any]]]:
-        """
-        Enables the RouterAgent to behave like other agents, primarily for consistency.
-        """
         response, thought, tools, _, _ = await self.route(user_input=user_input, context=context)
         return response, thought, tools
 
@@ -63,18 +59,46 @@ class RouterAgent(BaseAgent):
         """
         context = context or {}
 
-        # Step 1: Score agents by relevance using rank_agents()
+        # Step 1: Score agents by relevance
         ranked: List[Tuple[BaseAgent, int]] = rank_agents(user_input)
 
-        # Step 2: Pick the best agent
+        # Step 2: Try the best ranked agent (even if score is 0)
         if ranked:
             best_agent, score = ranked[0]
-            response, thought, tool_calls = await best_agent.handle(user_input, context)
-            return response, thought, tool_calls, best_agent.__class__.__name__, float(score)
+            try:
+                result = await best_agent.handle(user_input, context)
 
-        # Step 3: Fallback response
+                if isinstance(result, str):
+                    response = result
+                    thought = {
+                        "reasoning": f"Handled by {best_agent.__class__.__name__} based on prompt match.",
+                        "tool_invoked": "gemini-2.5-flash",
+                        "observation": "Returned simple text."
+                    }
+                    return response, thought, [], best_agent.__class__.__name__, float(score)
+
+                response, thought, tools = result
+                return response, thought, tools, best_agent.__class__.__name__, float(score)
+
+            except Exception as e:
+                print(f"Agent {best_agent.__class__.__name__} failed: {e}")
+
+        # Step 3: Fallback to direct model handler if all else fails
+        try:
+            response = await llm_handler.generate(user_input)
+            thought = {
+                "reasoning": "No specialized agent scored confidently or succeeded. Used LLM handler fallback.",
+                "tool_invoked": "gemini-2.5-flash",
+                "observation": "Handled via direct LLM call."
+            }
+            return response, thought, [], "llm_handler", 0.0
+
+        except Exception as e:
+            print(f"LLM Handler Fallback failed: {e}")
+
+        # Step 4: Final fallback message
         fallback_msg = (
-            "🤖 I'm not sure how to help with that.\n"
+            "🤖 Hi, I am Emzyking AI your programming Assistant, I'm not sure how to help with that.\n"
             "Try one of the following:\n"
             "• 'Generate a Python function to sort a list'\n"
             "• 'Fix this broken JavaScript code'\n"

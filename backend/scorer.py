@@ -1,6 +1,6 @@
 """
 This module ranks available AI agents by how well they match the user’s prompt,
-based on basic keyword heuristics or more advanced NLP models (extensible).
+based on keyword heuristics and/or agent-specific scoring logic.
 
 Author: Emzyking AI
 """
@@ -27,27 +27,41 @@ def keyword_match_score(prompt: str, keywords: List[str]) -> int:
 def rank_agents(prompt: str) -> List[Tuple[BaseAgent, int]]:
     """
     Ranks all registered agents by their relevance to the prompt using
-    keyword heuristics or can_handle() confidence.
-
-    Args:
-        prompt (str): The user input string.
+    either keyword heuristics or custom can_handle scoring.
 
     Returns:
-        List[Tuple[BaseAgent, int]]: Agents ranked by descending match score.
+        List[Tuple[BaseAgent, int]]: Sorted list of (agent, score)
     """
-    # 🛠️ Lazy import to break circular dependency
     from backend.agent_registry import AGENT_REGISTRY
 
     ranked: List[Tuple[BaseAgent, int]] = []
 
     for agent_name, agent in AGENT_REGISTRY.items():
-        if isinstance(agent, BaseAgent):
-            try:
-                score = keyword_match_score(prompt, agent.keywords())
-                if score > 0:
-                    ranked.append((agent, score))
-            except Exception:
+        if not isinstance(agent, BaseAgent):
+            continue
+
+        try:
+            # Try agent-defined logic
+            score = agent.can_handle(prompt)
+            if isinstance(score, int) and score > 0:
+                ranked.append((agent, score))
                 continue
 
+            # Try keyword fallback if .keywords() exists
+            if hasattr(agent, "keywords"):
+                keywords = agent.keywords()
+                kw_score = keyword_match_score(prompt, keywords)
+                if kw_score > 0:
+                    ranked.append((agent, kw_score))
+
+        except Exception as e:
+            print(f"[Ranker] Error scoring agent '{agent_name}': {e}")
+            continue
+
+    # Sort by score descending
     ranked.sort(key=lambda x: x[1], reverse=True)
+
+    # Debugging output
+    print("[Router] Agent Ranking:", [(a.name, s) for a, s in ranked])
+
     return ranked

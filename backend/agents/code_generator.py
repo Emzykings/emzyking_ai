@@ -6,7 +6,7 @@ Author: Emzyking AI
 """
 
 from backend.agents.base_agent import BaseAgent
-from typing import Any, Dict
+from typing import Any, Dict, List
 import os
 import google.generativeai as genai
 from dotenv import load_dotenv
@@ -27,19 +27,30 @@ class CodeGeneratorAgent(BaseAgent):
             description="Generates code snippets based on the user's prompt."
         )
 
-    def can_handle(self, prompt: str) -> bool:
+    def keywords(self) -> List[str]:
         """
-        Determines if the prompt is a code generation request.
+        Returns a list of keywords relevant to code generation tasks.
+        Used by rank_agents() to score match confidence.
+        """
+        return [
+            "build", "generate", "create", "code", "script", "function",
+            "write", "api", "class", "loop", "if statement", "program",
+            "multiply", "sort", "calculate", "output", "print", "return",
+            "syntax", "python", "javascript", "sql", "c++", "java"
+        ]
+
+    def can_handle(self, prompt: str) -> int:
+        """
+        Scores how well this agent can handle the given prompt.
 
         Args:
             prompt (str): The user input.
 
         Returns:
-            bool: True if this agent can handle it.
+            int: Match score based on keyword occurrences.
         """
-        # Heuristics: basic check for code-like instructions
-        keywords = ["build", "generate", "create", "code", "script", "function", "write", "api", "class"]
-        return any(keyword in prompt.lower() for keyword in keywords)
+        prompt_lower = prompt.lower()
+        return sum(1 for kw in self.keywords() if kw in prompt_lower)
 
     async def handle(self, prompt: str, context: Dict[str, Any] = {}) -> str:
         """
@@ -53,9 +64,10 @@ class CodeGeneratorAgent(BaseAgent):
             str: Generated code snippet.
         """
         full_prompt = (
-            "You are Emzyking AI, a smart code generation assistant. "
-            "Only provide the code in your response without extra explanation.\n\n"
-            f"User Request: {prompt}\n\n"
+            "You are Emzyking AI, a smart and concise code generation assistant.\n"
+            "Your task is to generate clean, correct, and efficient code for the following user request.\n"
+            "Respond ONLY with the code. Use comments where needed but no extra text.\n\n"
+            f"User Request: {prompt.strip()}\n\n"
             "Generated Code:"
         )
 
