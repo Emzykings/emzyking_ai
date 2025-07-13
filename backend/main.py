@@ -21,7 +21,7 @@ app = FastAPI()
 # Allow CORS for frontend integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Open for dev, lock down in prod
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -29,12 +29,10 @@ app.add_middleware(
 
 @app.get("/")
 def home():
-    """Basic health check route."""
     return {"message": "Emzyking AI Backend is Running 🚀"}
 
 @app.post("/new-chat")
 def new_chat(db: Session = Depends(get_db)):
-    """Creates and stores a new chat session."""
     chat_id = str(uuid.uuid4())
     new_session = db_models.ChatSession(chat_id=chat_id)
     db.add(new_session)
@@ -44,11 +42,6 @@ def new_chat(db: Session = Depends(get_db)):
 
 @app.post("/continue-chat")
 async def continue_chat(request: ContinueChatRequest, db: Session = Depends(get_db)):
-    """
-    Continues an ongoing chat by saving the user prompt,
-    routing it through the intelligent agent layer,
-    and storing all results.
-    """
     try:
         chat_id = request.chat_id
         user_prompt = request.prompt
@@ -60,21 +53,17 @@ async def continue_chat(request: ContinueChatRequest, db: Session = Depends(get_
         if not chat_session:
             raise HTTPException(status_code=404, detail="Chat session not found.")
 
-        # Store user message
         user_msg = db_models.ChatMessage(chat_id=chat_id, role="user", content=user_prompt)
         db.add(user_msg)
         db.commit()
         db.refresh(user_msg)
 
-        # Inject memory + recent history
         context = build_context(chat_id, db)
 
-        # Route intelligently via router
         response_text, thought, tool_calls, agent_name, confidence = await router_agent.route(
             chat_id=chat_id, user_input=user_prompt, context=context
         )
 
-        # Store assistant message
         assistant_msg = db_models.ChatMessage(
             chat_id=chat_id, role="assistant", content=response_text
         )
@@ -82,7 +71,6 @@ async def continue_chat(request: ContinueChatRequest, db: Session = Depends(get_
         db.commit()
         db.refresh(assistant_msg)
 
-        # Store optional agent thought
         if thought:
             agent_thought = db_models.AgentThought(
                 message_id=assistant_msg.id,
@@ -92,7 +80,6 @@ async def continue_chat(request: ContinueChatRequest, db: Session = Depends(get_
             )
             db.add(agent_thought)
 
-        # Store any tool usage
         for tool in tool_calls or []:
             db.add(
                 db_models.ToolUsage(
@@ -120,7 +107,6 @@ async def continue_chat(request: ContinueChatRequest, db: Session = Depends(get_
 
 @app.post("/generate-code")
 async def generate_code(request: PromptRequest):
-    """Shortcut endpoint to directly generate code without a chat session."""
     result, _, _, _, _ = await router_agent.route(
         chat_id=str(uuid.uuid4()), user_input=request.prompt
     )
@@ -128,7 +114,6 @@ async def generate_code(request: PromptRequest):
 
 @app.get("/chat-history/{chat_id}")
 def get_chat_history(chat_id: str, db: Session = Depends(get_db)):
-    """Fetches full message history for a single chat session."""
     session = db.query(db_models.ChatSession).filter_by(chat_id=chat_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found.")
@@ -147,13 +132,14 @@ def get_chat_history(chat_id: str, db: Session = Depends(get_db)):
 
 @app.get("/all-chat-history")
 def get_all_chat_history(db: Session = Depends(get_db)):
-    """Returns summaries and full message logs for all chat sessions."""
     try:
         all_chats = (
             db.query(db_models.ChatSession)
             .order_by(db_models.ChatSession.created_at.desc())
             .all()
         )
+
+        print(f"🗂️ Total chat sessions: {len(all_chats)}")
 
         chat_histories = []
         for chat in all_chats:
@@ -165,30 +151,30 @@ def get_all_chat_history(db: Session = Depends(get_db)):
             )
 
             user_texts = [m.content for m in messages if m.role == "user"]
-            summary = extract_keywords(user_texts)
+
+            try:
+                summary = extract_keywords(user_texts)
+            except Exception as e:
+                print(f"⚠️ Failed to extract keywords for chat {chat.chat_id}: {e}")
+                summary = "Keyword summary failed"
 
             chat_histories.append(
                 {
                     "chat_id": chat.chat_id,
                     "created_at": chat.created_at,
                     "summary": summary,
-                    "messages": [
-                        {"role": m.role, "content": m.content} for m in messages
-                    ],
+                    "messages": [{"role": m.role, "content": m.content} for m in messages],
                 }
             )
 
         return {"chats": chat_histories}
 
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/feedback")
 def submit_feedback(request: FeedbackRequest, db: Session = Depends(get_db)):
-    """
-    Accepts user feedback on an agent's response.
-    Includes rating, optional comments, and message reference.
-    """
     try:
         save_feedback_from_request(db, request)
         return {"message": "Feedback received successfully"}
